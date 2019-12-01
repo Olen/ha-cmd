@@ -35,7 +35,11 @@ Validate the current config
 
     ha-cmd check
 
-Reload scripts
+Reload (some of) the config (scripts, automatons, groups and customizations)
+
+    ha-cmd reload 
+
+Reload scripts only
 
     ha-cmd reload scripts
 
