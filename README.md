@@ -25,18 +25,22 @@ Or you can specify
     core                Reload core (same as customizations)
 
 optional arguments:
+
     -h, --help            show this help message and exit
     --no-validate         Skip config-validation
 
 ## Example
 
 Validate the current config
+
     ha-cmd check
 
 Reload scripts
+
     ha-cmd reload scripts
 
 Upgrade to the latest docker image without first validating the current config
+
     ha-cmd upgrade --no-validate
 
 This will work even if the current instance of HA has crashed or the UI is unavailable
