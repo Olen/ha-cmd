@@ -1,0 +1,240 @@
+#!/usr/bin/env python3
+
+from requests import get, post
+import yaml
+import sys
+import os
+import argparse
+import subprocess
+
+
+#
+# Copy the file ha-cmd.yaml.dist to ha-cmd.yaml and insert the correct base-url to your server and a valid token
+#
+
+
+with open("ha-cmd.yaml", 'r') as ymlfile:
+    cfg = yaml.load(ymlfile, Loader=yaml.BaseLoader)
+    if 'baseurl' in cfg:
+        BASE_URL = cfg['baseurl']
+    else:
+        print("Missing baseurl: in ha-cmd.yaml")
+        sys.exit(2)
+    if 'token' in cfg:
+        TOKEN = cfg['token']
+    else:
+        print("Missing token: in ha-cmd.yaml")
+        sys.exit(2)
+
+CONFIG_URL      = BASE_URL + "/api/config/core/check_config"
+STOP_URL        = BASE_URL + "/api/services/homeassistant/stop"
+RESTART_URL     = BASE_URL + "/api/services/homeassistant/restart"
+
+AUTOMATIONS_URL = BASE_URL + "/api/services/automation/reload"
+GROUPS_URL      = BASE_URL + "/api/services/group/reload"
+SCRIPTS_URL     = BASE_URL + "/api/services/script/reload"
+CUSTOMIZE_URL   = BASE_URL + "/api/services/homeassistant/reload_core_config"
+
+HEADERS         = {
+    'Authorization': 'Bearer ' + TOKEN,
+    'content-type': 'application/json',
+}
+
+
+DOCKER_CMD      = 'docker-compose -f $HOME/docker/docker-compose.yml'
+
+def main():
+    args = parse_args()
+    command     = args['command']
+    subcommand  = args['subcommand']
+    validate    = args['validate']
+
+    if validate == True and not check_config():
+        print("Exiting due to config errors")
+        sys.exit(2)
+    
+    if command == "check":
+        # Validate is done in the preious step, so just exit gracefully
+        sys.exit(0)
+    
+    if command == "reload":
+        if subcommand == None:
+            reload_ha()
+        if subcommand == "groups":
+            reload_groups()
+        if subcommand == "automations":
+            reload_automations()
+        if subcommand == "scripts":
+            reload_scripts()
+        if subcommand == "customizations":
+            reload_customizations()
+        if subcommand == "core":
+            reload_customizations()
+    
+    if command == "restart":
+        restart_ha()
+    
+    if command == "reboot":
+        reboot_ha()
+    
+    if command == "upgrade":
+        upgrade_ha()
+    
+    if command == "stop":
+        stop_ha()
+    
+    
+def check_config():
+    print("Validating current config...", end='', flush=True)
+    try:
+        response = post(CONFIG_URL, headers=HEADERS)
+        result = response.json()
+    except Exception as e:
+        print(response)
+        print(e)
+        return False
+    print(result['result'])
+    if result['errors'] is None and result['result'] == "valid":
+        return True
+    else:
+        print(result['errors'])
+        return False
+
+def stop_ha():
+    print("Stopping Home Assistant...", end='', flush=True)
+    response = post(STOP_URL, headers=HEADERS)
+    result = response.json()
+    print(result)
+
+def restart_ha():
+    print("Restarting Home Assistant...", end='', flush=True)
+    response = post(RESTART_URL, headers=HEADERS)
+    result = response.json()
+    print(result)
+
+def reboot_ha():
+    # Restarting container
+    print("Restarting Home Assistant container...", end='', flush=True)
+    try:
+        stop_ha()
+    except Exception as e:
+        print(e)
+    subprocess.run(DOCKER_CMD + " down", shell=True, check=True)
+    subprocess.run(DOCKER_CMD + " up -d", shell=True, check=True)
+
+def upgrade_ha():
+    # Restarting container with pull
+    print("Upgrading Home Assistant container...", end='', flush=True)
+    try:
+        stop_ha()
+    except Exception as e:
+        print(e)
+    subprocess.run(DOCKER_CMD + " down", shell=True, check=True)
+    subprocess.run(DOCKER_CMD + " pull", shell=True, check=True)
+    subprocess.run(DOCKER_CMD + " up -d", shell=True, check=True)
+
+
+
+def reload_ha():
+    reload_groups()
+    reload_scripts()
+    reload_automations()
+    reload_customizations()
+
+def reload_scripts():
+    print("Reloading scripts...", end='', flush=True)
+    response = post(SCRIPTS_URL, headers=HEADERS)
+    result = response.json()
+    print(len(result), "scripts reloaded")
+
+def reload_automations():
+    print("Reloading automations...", end='', flush=True)
+    response = post(AUTOMATIONS_URL, headers=HEADERS)
+    result = response.json()
+    print(len(result), "automations reloaded")
+
+def reload_groups():
+    print("Reloading groups...", end='', flush=True)
+    response = post(GROUPS_URL, headers=HEADERS)
+    result = response.json()
+    print(len(result), "groups reloaded")
+
+def reload_customizations():
+    print("Reloading customizations...", end='', flush=True)
+    response = post(CUSTOMIZE_URL, headers=HEADERS)
+    result = response.json()
+    print(len(result), "customizations reloaded")
+
+
+def parse_args():
+#
+# This is not pretty, but it works...
+#
+# Allows you to run all possible variations of 
+# - $0 command
+# - $0 command --no-validate
+# - $0 --no-validate command
+# - $0 command subcommand --no-validate
+# - $0 --no-validate command subcommand
+# etc
+#
+
+    parser = argparse.ArgumentParser(description='Control Home Assistant from CLI')
+    parser.add_argument('--no-validate', dest='no_validate', action='store_true', help='Skip config-validation')
+    
+    subparsers = parser.add_subparsers(help='sub-command help', dest='command')
+    
+    parser_1 = subparsers.add_parser('check', help='Validate config', description='Validates the current configuration files')
+    
+    parser_3 = subparsers.add_parser('restart', help='Restart HA', description='Restart the Home Assistant process')
+    parser_3.add_argument('--no-validate', dest='no_validate_2', action='store_true', help='Skip config-validation')
+    
+    parser_4 = subparsers.add_parser('reload', help='Reload dynamic config. See "{} reload -h" for additional information'.format(os.path.basename(sys.argv[0])), description='Reload parts of the configuration')
+    parser_4.add_argument('--no-validate', dest='no_validate_2', action='store_true', help='Skip config-validation')
+    
+    subsubs = parser_4.add_subparsers(help='Without an additional argument, reload the entire (available) configuraton', dest='subcommand')
+    parser_41 = subsubs.add_parser('automations', help='Reload automations')
+    parser_41.add_argument('--no-validate', action='store_true', dest='no_validate_3', help='Skip config-validation')
+    parser_42 = subsubs.add_parser('scripts', help='Reload scripts')
+    parser_42.add_argument('--no-validate', action='store_true', dest='no_validate_3', help='Skip config-validation')
+    parser_43 = subsubs.add_parser('groups', help='Reload groups')
+    parser_43.add_argument('--no-validate', action='store_true', dest='no_validate_3', help='Skip config-validation')
+    parser_44 = subsubs.add_parser('customizations', help='Reload customizations')
+    parser_44.add_argument('--no-validate', action='store_true', dest='no_validate_3', help='Skip config-validation')
+    parser_45 = subsubs.add_parser('core', help='Reload core (same as customizations)')
+    parser_45.add_argument('--no-validate', action='store_true', dest='no_validate_3', help='Skip config-validation')
+    
+    parser_5 = subparsers.add_parser('reboot', help='Reboot HA-container', description='Restart the container running Home Assistant')
+    parser_5.add_argument('--no-validate', dest='no_validate_2', action='store_true', help='Skip config-validation')
+    
+    parser_6 = subparsers.add_parser('upgrade', help='Reboot HA-container and pull new version', description='Restart the container running Home Assistant with a new release')
+    parser_6.add_argument('--no-validate', dest='no_validate_2', action='store_true', help='Skip config-validation')
+    
+    parser_9 = subparsers.add_parser('stop', help='Stop HA', description='Stop the Home Assistant process. There is no way to start it from CLI again without restarting the container with --no-validate.')
+    parser_9.add_argument('--no-validate', dest='no_validate_2', action='store_true', help='Skip config-validation')
+    
+    args = parser.parse_args()
+    command = args.command
+    
+    subcommand = None
+    if 'subcommand' in args:
+        subcommand = args.subcommand
+    
+    validate = True
+    if ('no_validate' in args and args.no_validate == True):
+        validate = False
+    if ('no_validate_2' in args and args.no_validate_2 == True):
+        validate = False
+    if ('no_validate_3' in args and args.no_validate_3 == True):
+        validate = False
+
+    # Just to ensure that you cant run "check" with "-no-validate" - it does not make any sense
+    if command == "check":
+        validate = True
+    if command == None:
+        parser.print_help()
+        sys.exit()
+    
+    return {'command': command, 'subcommand': subcommand, 'validate': validate }
+    
+main()
