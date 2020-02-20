@@ -10,10 +10,10 @@ import subprocess
 
 #
 # Copy the file ha-cmd.yaml.dist to ha-cmd.yaml and insert the correct base-url to your server and a valid token
+# Ensure that the config-file is in the same dir as the script-file
 #
 
-
-with open("ha-cmd.yaml", 'r') as ymlfile:
+with open(os.path.dirname(__file__) + "/ha-cmd.yaml", 'r') as ymlfile:
     cfg = yaml.load(ymlfile, Loader=yaml.BaseLoader)
     if 'baseurl' in cfg:
         BASE_URL = cfg['baseurl']
@@ -33,7 +33,11 @@ RESTART_URL     = BASE_URL + "/api/services/homeassistant/restart"
 AUTOMATIONS_URL = BASE_URL + "/api/services/automation/reload"
 GROUPS_URL      = BASE_URL + "/api/services/group/reload"
 SCRIPTS_URL     = BASE_URL + "/api/services/script/reload"
+ZONES_URL       = BASE_URL + "/api/services/zone/reload"
 CUSTOMIZE_URL   = BASE_URL + "/api/services/homeassistant/reload_core_config"
+DATETIME_URL    = BASE_URL + "/api/services/input_datetime/reload"
+NUMBER_URL      = BASE_URL + "/api/services/input_number/reload"
+SELECT_URL      = BASE_URL + "/api/services/input_select/reload"
 
 HEADERS         = {
     'Authorization': 'Bearer ' + TOKEN,
@@ -41,7 +45,7 @@ HEADERS         = {
 }
 
 
-DOCKER_CMD      = 'docker-compose -f $HOME/docker/docker-compose.yml'
+DOCKER_CMD      = 'docker-compose -f $HOME/docker/home-assistant/docker-compose.yml'
 
 def main():
     args = parse_args()
@@ -68,6 +72,10 @@ def main():
             reload_scripts()
         if subcommand == "customizations":
             reload_customizations()
+        if subcommand == "inputs":
+            reload_inputs()
+        if subcommand == "zones":
+            reload_zones()
         if subcommand == "core":
             reload_customizations()
     
@@ -129,17 +137,23 @@ def upgrade_ha():
         stop_ha()
     except Exception as e:
         print(e)
-    subprocess.run(DOCKER_CMD + " down", shell=True, check=True)
-    subprocess.run(DOCKER_CMD + " pull", shell=True, check=True)
-    subprocess.run(DOCKER_CMD + " up -d", shell=True, check=True)
+    subprocess.run('sudo systemctl restart docker-compose@home-assistant.service', shell=True, check=True)
 
 
 
 def reload_ha():
+    reload_inputs()
+    reload_zones()
     reload_groups()
     reload_scripts()
     reload_automations()
     reload_customizations()
+
+def reload_zones():
+    print("Reloading zones...", end='', flush=True)
+    response = post(ZONES_URL, headers=HEADERS)
+    result = response.json()
+    print(len(result), "zoness reloaded")
 
 def reload_scripts():
     print("Reloading scripts...", end='', flush=True)
@@ -164,6 +178,20 @@ def reload_customizations():
     response = post(CUSTOMIZE_URL, headers=HEADERS)
     result = response.json()
     print(len(result), "customizations reloaded")
+
+def reload_inputs():
+    print("Reloading inputs...", end='\n', flush=True)
+    response = post(DATETIME_URL, headers=HEADERS)
+    result = response.json()
+    print("*", len(result), "datetimes reloaded")
+    response = post(NUMBER_URL, headers=HEADERS)
+    result = response.json()
+    print("*", len(result), "numbers reloaded")
+    response = post(SELECT_URL, headers=HEADERS)
+    result = response.json()
+    print("*", len(result), "selects reloaded")
+
+
 
 
 def parse_args():
@@ -203,6 +231,10 @@ def parse_args():
     parser_44.add_argument('--no-validate', action='store_true', dest='no_validate_3', help='Skip config-validation')
     parser_45 = subsubs.add_parser('core', help='Reload core (same as customizations)')
     parser_45.add_argument('--no-validate', action='store_true', dest='no_validate_3', help='Skip config-validation')
+    parser_46 = subsubs.add_parser('inputs', help='Reload inputs (input_number, input_datetime and input_select)')
+    parser_46.add_argument('--no-validate', action='store_true', dest='no_validate_3', help='Skip config-validation')
+    parser_47 = subsubs.add_parser('zones', help='Reload zones')
+    parser_47.add_argument('--no-validate', action='store_true', dest='no_validate_3', help='Skip config-validation')
     
     parser_5 = subparsers.add_parser('reboot', help='Reboot HA-container', description='Restart the container running Home Assistant')
     parser_5.add_argument('--no-validate', dest='no_validate_2', action='store_true', help='Skip config-validation')
