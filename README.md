@@ -18,8 +18,8 @@ You can reload parts of the config (just like in the web ui)
 Without an additional argument, _reload_ reloads all the parts.
 Or you can specify
 
-    zones	        Reload zones
-    inputs	        Reload inputs (input_number, input_datetime, input_select)
+    zones               Reload zones
+    inputs              Reload inputs (input_number, input_datetime, input_select)
     automations         Reload automations
     scripts             Reload scripts
     groups              Reload groups
